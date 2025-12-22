@@ -1,25 +1,19 @@
 --[[ 
-    MODERN UI LIBRARY v5 (Auto-Unload Previous Instance)
-    ----------------------------------------------------
-    Features:
-    - Mobile Drag & Touch Support
-    - Min/Max & Exit Buttons
-    - Full Colored Border Theme
-    - SINGLE INSTANCE: Automatically destroys old UI on execution.
+    MODERN UI LIBRARY (Core Only)
+    -----------------------------
+    1. Paste this code at the top of your script.
+    2. Write your own Window/Tab/Button logic at the bottom.
 ]]
 
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
---// 1. LIBRARY CONFIGURATION //--
 local Library = {}
-
-local GUI_NAME = "ModernLibrary_AutoUnload" -- Unique Name to detect duplicates
+local GUI_NAME = "ModernLibrary_AutoUnload"
 
 local THEME = {
 	Background = Color3.fromRGB(20, 20, 25),
@@ -32,7 +26,7 @@ local THEME = {
 	Stroke     = Color3.fromRGB(50, 50, 55)
 }
 
---// 2. UTILITY FUNCTIONS //--
+--// UTILITY FUNCTIONS //--
 local function Create(class, props)
 	local inst = Instance.new(class)
 	for k, v in pairs(props) do inst[k] = v end
@@ -78,19 +72,16 @@ local function MakeDraggable(topbar, widget)
 	end)
 end
 
---// 3. MAIN LIBRARY LOGIC //--
+--// MAIN LIBRARY LOGIC //--
 function Library:CreateWindow(config)
 	local Title = config.Title or "UI Library"
 	
-	-- [[ SINGLE INSTANCE CHECK ]] --
-	-- This looks for an existing GUI with the same name and deletes it.
+	-- Auto-Unload previous instance
 	local OldInstance = PlayerGui:FindFirstChild(GUI_NAME)
 	if OldInstance then
-		print("[UI Library]: Removing previous instance...")
 		OldInstance:Destroy()
 	end
 
-	-- Create New ScreenGui
 	local ScreenGui = Create("ScreenGui", {
 		Name = GUI_NAME,
 		Parent = PlayerGui,
@@ -99,13 +90,13 @@ function Library:CreateWindow(config)
 		IgnoreGuiInset = true
 	})
 
-	-- [A] MINIMIZED BUTTON
+	-- Minimized Button
 	local OpenFrame = Create("Frame", {
 		Name = "OpenFrame",
 		Parent = ScreenGui,
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 10),
-		Size = UDim2.new(0, 0, 0, 0), -- Starts hidden
+		Size = UDim2.new(0, 0, 0, 0),
 		BackgroundColor3 = THEME.Background,
 		ClipsDescendants = true,
 		Visible = false
@@ -123,7 +114,7 @@ function Library:CreateWindow(config)
 		TextSize = 14
 	})
 
-	-- [B] MAIN WINDOW
+	-- Main Window
 	local MainFrame = Create("Frame", {
 		Name = "MainFrame",
 		Parent = ScreenGui,
@@ -134,14 +125,7 @@ function Library:CreateWindow(config)
 		ClipsDescendants = true
 	})
 	Create("UICorner", {Parent = MainFrame, CornerRadius = UDim.new(0, 10)})
-	
-	-- Full Colored Border
-	Create("UIStroke", {
-		Parent = MainFrame,
-		Color = THEME.Accent,
-		Thickness = 2,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	})
+	Create("UIStroke", {Parent = MainFrame, Color = THEME.Accent, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
 
 	-- Topbar
 	local Topbar = Create("Frame", {
@@ -152,7 +136,7 @@ function Library:CreateWindow(config)
 	})
 	MakeDraggable(Topbar, MainFrame)
 
-	local TitleLabel = Create("TextLabel", {
+	Create("TextLabel", {
 		Parent = Topbar,
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 15, 0, 0),
@@ -164,7 +148,7 @@ function Library:CreateWindow(config)
 		TextXAlignment = Enum.TextXAlignment.Left
 	})
 
-	-- Controls (Minimize / Exit)
+	-- Controls
 	local Controls = Create("Frame", {
 		Parent = Topbar,
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -196,7 +180,6 @@ function Library:CreateWindow(config)
 	})
 	Create("UICorner", {Parent = ExitBtn, CornerRadius = UDim.new(0, 4)})
 
-	-- Minimize Logic
 	MinBtn.MouseButton1Click:Connect(function()
 		MainFrame:TweenSize(UDim2.new(0, 500, 0, 0), "In", "Quad", 0.3, true, function()
 			MainFrame.Visible = false
@@ -205,7 +188,6 @@ function Library:CreateWindow(config)
 		end)
 	end)
 
-	-- Open Logic
 	OpenBtn.MouseButton1Click:Connect(function()
 		OpenFrame:TweenSize(UDim2.new(0, 0, 0, 0), "In", "Quad", 0.2, true, function()
 			OpenFrame.Visible = false
@@ -214,12 +196,11 @@ function Library:CreateWindow(config)
 		end)
 	end)
 
-	-- Exit Logic
 	ExitBtn.MouseButton1Click:Connect(function()
 		ScreenGui:Destroy()
 	end)
 
-	-- Sidebar
+	-- Sidebar & Pages
 	local Sidebar = Create("Frame", {
 		Parent = MainFrame,
 		BackgroundColor3 = THEME.Section,
@@ -230,7 +211,6 @@ function Library:CreateWindow(config)
 	Create("UIListLayout", {Parent = Sidebar, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5)})
 	Create("UIPadding", {Parent = Sidebar, PaddingTop = UDim.new(0, 10), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)})
 
-	-- Pages
 	local PageContainer = Create("Frame", {
 		Parent = MainFrame,
 		BackgroundTransparency = 1,
@@ -241,7 +221,6 @@ function Library:CreateWindow(config)
 	local WindowObj = {Tabs = {}}
 	local FirstTab = true
 
-	-- [C] TAB CREATION
 	function WindowObj:CreateTab(name)
 		local TabBtn = Create("TextButton", {
 			Parent = Sidebar,
@@ -288,7 +267,6 @@ function Library:CreateWindow(config)
 
 		local Elements = {}
 
-		-- [D] ELEMENTS
 		function Elements:CreateSection(text)
 			Create("TextLabel", {
 				Parent = Page,
@@ -467,43 +445,11 @@ function Library:CreateWindow(config)
 	return WindowObj
 end
 
---// 4. EXAMPLE USAGE //--
+--========================================================--
+--            WRITE YOUR CUSTOM CODE BELOW HERE           --
+--========================================================--
 
-local Window = Library:CreateWindow({
-	Title = "Final UI Library"
-})
-
--- Tab 1
-local MainTab = Window:CreateTab("Main")
-
-MainTab:CreateSection("Character Stats")
-
-MainTab:CreateSlider("WalkSpeed", 16, 200, 16, function(value)
-	if LocalPlayer.Character then
-		LocalPlayer.Character.Humanoid.WalkSpeed = value
-	end
-end)
-
-MainTab:CreateSlider("JumpPower", 50, 400, 50, function(value)
-	if LocalPlayer.Character then
-		LocalPlayer.Character.Humanoid.JumpPower = value
-	end
-end)
-
-MainTab:CreateToggle("Auto Jump", function(state)
-	print("Auto Jump:", state)
-end)
-
-MainTab:CreateButton("Reset Character", function()
-	if LocalPlayer.Character then
-		LocalPlayer.Character:BreakJoints()
-	end
-end)
-
--- Tab 2
-local VisualsTab = Window:CreateTab("Visuals")
-
-VisualsTab:CreateSection("Camera")
-VisualsTab:CreateSlider("FOV", 70, 120, 70, function(v)
-	workspace.CurrentCamera.FieldOfView = v
-end)
+-- Example:
+-- local Window = Library:CreateWindow({ Title = "My Script" })
+-- local Tab = Window:CreateTab("Home")
+-- Tab:CreateButton("Click Me", function() print("Works!") end)
