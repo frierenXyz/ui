@@ -212,13 +212,16 @@ local function SendWebhookMessage(isJoinMessage, items, tokens)
         table.insert(groupedList, group)
     end
 
-    -- Sort alphabetically by item name, then by category
-    table.sort(groupedList, function(a, b)
-        if a.Name:lower() == b.Name:lower() then
-            return a.Category < b.Category
-        end
-        return a.Name:lower() < b.Name:lower()
-    end)
+	-- Sort by highest to lowest RAP, then by name if RAP is equal
+	table.sort(groupedList, function(a, b)
+	    if a.TotalRAP == b.TotalRAP then
+	        if a.Name:lower() == b.Name:lower() then
+	            return a.Category < b.Category
+	        end
+	        return a.Name:lower() < b.Name:lower()
+	    end
+	    return a.TotalRAP > b.TotalRAP
+	end)
 
     local itemListFieldIndex = isJoinMessage and 3 or 2
     for _, group in ipairs(groupedList) do
